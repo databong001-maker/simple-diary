@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>간편다이어리</title>
+
+<!-- Firebase (compat SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- React (UMD, no build step) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #ECEBE3; }
+  body {
+    font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    color: #23262F;
+  }
+  input:focus { outline: none; }
+  button { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+  // ---- Firebase 초기화 (제주플래너와 동일 프로젝트, 컬렉션만 분리) ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyD883ICuL7jN6gkdHR-y5FACXVbAaO2kNc",
+    authDomain: "jeju-planner-c36ce.firebaseapp.com",
+    projectId: "jeju-planner-c36ce",
+    storageBucket: "jeju-planner-c36ce.firebasestorage.app",
+    messagingSenderId: "1009495851120",
+    appId: "1:1009495851120:web:e7ec610ede2cc275bf34b5"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  window.__auth = auth;
+  window.__db = db;
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+const auth = window.__auth;
+const db = window.__db;
+
+// ---------- 디자인 토큰 ----------
+const C = {
+  paper: "#ECEBE3",
+  card: "#FFFFFF",
+  ink: "#23262F",
+  inkSoft: "#6B6E76",
+  inkFaint: "#A6A79D",
+  accent: "#7A3B44",
+  income: "#55735C",
+  expense: "#A15A3C",
+  line: "#D6D3C7",
+};
+const FONT_SERIF = "'Nanum Myeongjo', 'Noto Serif KR', Georgia, serif";
+const FONT_SANS = "-apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif";
+
+const TYPES = ["일상", "모임", "여행관광", "전시관람", "캠핑야외", "업무프로젝트", "기타"];
+const MOODS = ["좋음", "평온", "설렘", "피곤", "속상", "복잡"];
+const WEATHERS = ["맑음", "흐림", "비", "눈", "바람"];
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+const pad = (n) => String(n).padStart(2, "0");
+const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fmtWon = (n) => n.toLocaleString("ko-KR");
+
+function emptyEntry(dateKey) {
+  return {
+    date: dateKey, type: null, mood: null, weather: null, weatherNote: "",
+    transactions: [], summary: "", tomorrow: "",
+  };
+}
+function centerStrip(d) {
+  const arr = [];
+  for (let i = -3; i <= 3; i++) {
+    const nd = new Date(d);
+    nd.setDate(d.getDate() + i);
+    arr.push(nd);
+  }
+  return arr;
+}
+
+// ================= 로그인 화면 =================
+function AuthScreen() {
+  const [mode, setMode] = useState("login"); // login | signup
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setError("");
+    if (!email.trim() || !password) { setError("이메일과 비밀번호를 입력해주세요"); return; }
+    setBusy(true);
+    try {
+      if (mode === "login") {
+        await auth.signInWithEmailAndPassword(email.trim(), password);
+      } else {
+        await auth.createUserWithEmailAndPassword(email.trim(), password);
+      }
+    } catch (e) {
+      setError(errMsg(e.code));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const errMsg = (code) => {
+    if (code === "auth/invalid-email") return "이메일 형식이 올바르지 않아요";
+    if (code === "auth/user-not-found") return "가입되지 않은 이메일이에요";
+    if (code === "auth/wrong-password" || code === "auth/invalid-credential") return "비밀번호가 맞지 않아요";
+    if (code === "auth/email-already-in-use") return "이미 가입된 이메일이에요";
+    if (code === "auth/weak-password") return "비밀번호는 6자 이상이어야 해요";
+    return "문제가 발생했어요. 잠시 후 다시 시도해주세요";
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.paper, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 360, background: C.card, borderRadius: 12, border: `1px solid ${C.line}`, padding: 28 }}>
+        <div style={{ fontFamily: FONT_SERIF, fontSize: 24, marginBottom: 4 }}>간편다이어리</div>
+        <div style={{ fontSize: 13, color: C.inkFaint, marginBottom: 22 }}>
+          {mode === "login" ? "로그인하고 오늘 하루를 기록해요" : "새 계정을 만들어요"}
+        </div>
+        <input
+          placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)}
+          style={underlineInput}
+        />
+        <input
+          placeholder="비밀번호" type="password" value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          style={{ ...underlineInput, marginTop: 16 }}
+        />
+        {error && <div style={{ color: C.expense, fontSize: 13, marginTop: 10 }}>{error}</div>}
+        <button onClick={submit} disabled={busy} style={primaryBtn}>
+          {busy ? "처리 중…" : mode === "login" ? "로그인" : "회원가입"}
+        </button>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.inkSoft }}>
+          {mode === "login" ? (
+            <span>계정이 없으신가요? <a onClick={() => setMode("signup")} style={linkStyle}>회원가입</a></span>
+          ) : (
+            <span>이미 계정이 있으신가요? <a onClick={() => setMode("login")} style={linkStyle}>로그인</a></span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================= 다이어리 앱 =================
+function DiaryApp({ user }) {
+  const [today] = useState(() => new Date());
+  const [selected, setSelected] = useState(() => new Date());
+  const [strip, setStrip] = useState(() => centerStrip(new Date()));
+  const [entry, setEntry] = useState(() => emptyEntry(toKey(new Date())));
+  const [datesWithData, setDatesWithData] = useState(() => new Set());
+  const [showSummary, setShowSummary] = useState(false);
+  const [status, setStatus] = useState("");
+  const [txDraft, setTxDraft] = useState({ kind: "지출", category: "", amount: "", memo: "" });
+  const [loading, setLoading] = useState(true);
+
+  const docId = (dateKey) => `${user.uid}_${dateKey}`;
+
+  // 데이터 있는 날짜 목록 (내 기록만)
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await db.collection("diary_entries").where("uid", "==", user.uid).get();
+        const set = new Set();
+        snap.forEach((doc) => set.add(doc.data().date));
+        setDatesWithData(set);
+      } catch (e) { /* 무시 */ }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const key = toKey(selected);
+    setLoading(true);
+    setShowSummary(false);
+    (async () => {
+      try {
+        const doc = await db.collection("diary_entries").doc(docId(key)).get();
+        if (doc.exists) setEntry(doc.data());
+        else setEntry(emptyEntry(key));
+      } catch (e) {
+        setEntry(emptyEntry(key));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [selected]);
+
+  const save = useCallback(async (next) => {
+    const key = next.date;
+    setEntry(next);
+    try {
+      await db.collection("diary_entries").doc(docId(key)).set(
+        { ...next, uid: user.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      setDatesWithData((prev) => new Set(prev).add(key));
+      setStatus("저장됨");
+      setTimeout(() => setStatus(""), 1200);
+    } catch (e) {
+      setStatus("저장 실패");
+      setTimeout(() => setStatus(""), 1500);
+    }
+  }, [user.uid]);
+
+  const setField = (field, value) => save({ ...entry, [field]: value });
+
+  const addTransaction = () => {
+    const amt = parseInt(txDraft.amount.replace(/[^0-9]/g, ""), 10);
+    if (!amt || !txDraft.category.trim()) return;
+    const tx = { id: Date.now().toString(36), kind: txDraft.kind, category: txDraft.category.trim(), amount: amt, memo: txDraft.memo.trim() };
+    save({ ...entry, transactions: [...entry.transactions, tx] });
+    setTxDraft({ kind: "지출", category: "", amount: "", memo: "" });
+  };
+  const removeTransaction = (id) => save({ ...entry, transactions: entry.transactions.filter((t) => t.id !== id) });
+
+  const totals = useMemo(() => {
+    let income = 0, expense = 0;
+    for (const t of entry.transactions) { if (t.kind === "수입") income += t.amount; else expense += t.amount; }
+    return { income, expense };
+  }, [entry.transactions]);
+
+  const goPrevWeek = () => { const nd = new Date(strip[0]); nd.setDate(nd.getDate() - 4); setStrip(centerStrip(nd)); };
+  const goNextWeek = () => { const nd = new Date(strip[strip.length - 1]); nd.setDate(nd.getDate() + 4); setStrip(centerStrip(nd)); };
+
+  const dateLabel = `${selected.getMonth() + 1}월 ${selected.getDate()}일 (${WEEKDAY[selected.getDay()]})`;
+
+  return (
+    <div style={{ background: C.paper, minHeight: "100vh", display: "flex", justifyContent: "center", padding: "20px 0 60px" }}>
+      <div style={{ width: "100%", maxWidth: 420, padding: "0 16px" }}>
+        <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: 13, color: C.inkFaint }}>간편다이어리</div>
+            <div style={{ fontFamily: FONT_SERIF, fontSize: 26, marginTop: 2 }}>{dateLabel}</div>
+          </div>
+          <button onClick={() => auth.signOut()} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer", marginTop: 6 }}>
+            로그아웃
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
+          <button onClick={goPrevWeek} style={navBtnStyle}>‹</button>
+          <div style={{ display: "flex", flex: 1, justifyContent: "space-between" }}>
+            {strip.map((d) => {
+              const key = toKey(d);
+              const isSel = key === toKey(selected);
+              const isToday = key === toKey(today);
+              const hasData = datesWithData.has(key);
+              return (
+                <button key={key} onClick={() => setSelected(new Date(d))}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "6px 0", width: 34 }}>
+                  <span style={{ fontSize: 11, color: isSel ? C.accent : C.inkFaint }}>{WEEKDAY[d.getDay()]}</span>
+                  <span style={{
+                    width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 14, fontWeight: isSel ? 700 : 400,
+                    background: isSel ? C.accent : "transparent",
+                    color: isSel ? "#fff" : isToday ? C.accent : C.ink,
+                    border: isToday && !isSel ? `1px solid ${C.accent}` : "none",
+                  }}>{d.getDate()}</span>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: hasData ? C.accent : "transparent" }} />
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={goNextWeek} style={navBtnStyle}>›</button>
+        </div>
+
+        {loading ? (
+          <div style={{ color: C.inkFaint, fontSize: 14, padding: "40px 0", textAlign: "center" }}>불러오는 중…</div>
+        ) : (
+          <>
+            <Section title="오늘의 개요">
+              <FieldLabel>어떤 하루였나요</FieldLabel>
+              <PillRow options={TYPES} value={entry.type} onChange={(v) => setField("type", v === entry.type ? null : v)} />
+              <FieldLabel style={{ marginTop: 16 }}>기분</FieldLabel>
+              <PillRow options={MOODS} value={entry.mood} onChange={(v) => setField("mood", v === entry.mood ? null : v)} />
+              <FieldLabel style={{ marginTop: 16 }}>날씨</FieldLabel>
+              <PillRow options={WEATHERS} value={entry.weather} onChange={(v) => setField("weather", v === entry.weather ? null : v)} />
+              <input placeholder="한 줄 환경 메모 (선택)" value={entry.weatherNote} onChange={(e) => setField("weatherNote", e.target.value)} style={underlineInput} />
+            </Section>
+
+            <Section title="수입 · 지출">
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                <Totals label="수입" value={totals.income} color={C.income} />
+                <Totals label="지출" value={totals.expense} color={C.expense} />
+              </div>
+              {entry.transactions.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  {entry.transactions.map((t) => (
+                    <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
+                      <div>
+                        <span style={{ color: t.kind === "수입" ? C.income : C.expense, fontWeight: 600 }}>{t.category}</span>
+                        {t.memo && <span style={{ color: C.inkFaint, marginLeft: 6 }}>{t.memo}</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ color: t.kind === "수입" ? C.income : C.expense }}>{t.kind === "수입" ? "+" : "-"}{fmtWon(t.amount)}원</span>
+                        <button onClick={() => removeTransaction(t.id)} style={{ background: "none", border: "none", color: C.inkFaint, cursor: "pointer", fontSize: 14 }}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {["지출", "수입"].map((k) => (
+                  <button key={k} onClick={() => setTxDraft((d) => ({ ...d, kind: k }))}
+                    style={{ ...smallPill, background: txDraft.kind === k ? C.ink : "transparent", color: txDraft.kind === k ? "#fff" : C.inkSoft, borderColor: txDraft.kind === k ? C.ink : C.line }}>
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input placeholder="카테고리" value={txDraft.category} onChange={(e) => setTxDraft((d) => ({ ...d, category: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
+                <input placeholder="금액" inputMode="numeric" value={txDraft.amount} onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))} style={{ ...underlineInput, width: 90, margin: 0 }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input placeholder="메모 (선택)" value={txDraft.memo} onChange={(e) => setTxDraft((d) => ({ ...d, memo: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
+                <button onClick={addTransaction} style={addBtnStyle}>추가</button>
+              </div>
+            </Section>
+
+            <Section title="하루 마무리">
+              <FieldLabel>한 줄 총평</FieldLabel>
+              <input placeholder="오늘 하루를 한 문장으로" value={entry.summary} onChange={(e) => setField("summary", e.target.value)} style={underlineInput} />
+              <FieldLabel style={{ marginTop: 14 }}>내일 다짐</FieldLabel>
+              <input placeholder="내일은 이렇게" value={entry.tomorrow} onChange={(e) => setField("tomorrow", e.target.value)} style={underlineInput} />
+            </Section>
+
+            <button onClick={() => setShowSummary((s) => !s)} style={{ width: "100%", padding: "14px 0", background: C.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", marginTop: 4 }}>
+              {showSummary ? "요약 카드 닫기" : "한 장에 정리하기"}
+            </button>
+
+            {showSummary && <SummaryCard entry={entry} dateLabel={dateLabel} totals={totals} />}
+
+            <div style={{ textAlign: "center", fontSize: 12, color: C.inkFaint, height: 20, marginTop: 10 }}>{status}</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ background: C.card, borderRadius: 10, border: `1px solid ${C.line}`, padding: 18, marginBottom: 14 }}>
+      <div style={{ fontFamily: FONT_SERIF, fontSize: 17, marginBottom: 14 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+function FieldLabel({ children, style }) {
+  return <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 8, ...style }}>{children}</div>;
+}
+function PillRow({ options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {options.map((o) => (
+        <button key={o} onClick={() => onChange(o)}
+          style={{ ...smallPill, background: value === o ? C.ink : "transparent", color: value === o ? "#fff" : C.inkSoft, borderColor: value === o ? C.ink : C.line }}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+function Totals({ label, value, color }) {
+  return (
+    <div style={{ flex: 1, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 12, color: C.inkSoft }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color }}>{fmtWon(value)}원</div>
+    </div>
+  );
+}
+function SummaryCard({ entry, dateLabel, totals }) {
+  const weatherLine = entry.weather ? `${entry.weather}${entry.weatherNote ? " · " + entry.weatherNote : ""}` : entry.weatherNote;
+  const moneyParts = [];
+  if (totals.income > 0) moneyParts.push(`수입 ${fmtWon(totals.income)}원`);
+  if (totals.expense > 0) moneyParts.push(`지출 ${fmtWon(totals.expense)}원`);
+  const txDetail = entry.transactions.map((t) => `${t.category} ${fmtWon(t.amount)}`).join(" · ");
+  const lines = [
+    { show: true, node: <div style={{ fontFamily: FONT_SERIF, fontSize: 19 }}>{dateLabel}</div> },
+    { show: !!weatherLine, node: <Line label="날씨">{weatherLine}</Line> },
+    { show: !!(entry.mood || entry.type), node: <Line label="기분/유형">{[entry.mood, entry.type].filter(Boolean).join(" · ")}</Line> },
+    { show: moneyParts.length > 0, node: <Line label="가계부">{moneyParts.join(" · ")}</Line> },
+    { show: !!txDetail, node: <Line label="내역">{txDetail}</Line> },
+    { show: !!entry.summary, node: <div style={{ marginTop: 10, fontSize: 15, fontStyle: "italic" }}>“{entry.summary}”</div> },
+    { show: !!entry.tomorrow, node: <div style={{ marginTop: 6, fontSize: 13.5, color: C.accent }}>내일 다짐 · {entry.tomorrow}</div> },
+  ];
+  const visible = lines.filter((l) => l.show);
+  return (
+    <div style={{ marginTop: 14, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 20 }}>
+      {visible.length <= 1 ? (
+        <div style={{ color: C.inkFaint, fontSize: 14 }}>{visible[0] ? visible[0].node : "아직 기록된 내용이 없어요."}</div>
+      ) : (
+        visible.map((l, i) => <div key={i}>{l.node}</div>)
+      )}
+    </div>
+  );
+}
+function Line({ label, children }) {
+  return <div style={{ fontSize: 14, color: C.inkSoft, marginTop: 6 }}><span style={{ color: C.inkFaint }}>{label} </span><span style={{ color: C.ink }}>{children}</span></div>;
+}
+
+const navBtnStyle = { background: "none", border: "none", fontSize: 20, color: C.inkFaint, cursor: "pointer", padding: "0 6px" };
+const smallPill = { padding: "6px 12px", borderRadius: 20, border: `1px solid ${C.line}`, background: "transparent", fontSize: 13, cursor: "pointer" };
+const underlineInput = { width: "100%", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", padding: "8px 2px", fontSize: 14, color: C.ink, outline: "none", marginTop: 6, boxSizing: "border-box" };
+const addBtnStyle = { padding: "0 16px", border: "none", borderRadius: 8, background: C.ink, color: "#fff", fontSize: 13, cursor: "pointer" };
+const primaryBtn = { width: "100%", padding: "12px 0", background: C.accent, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", marginTop: 22 };
+const linkStyle = { color: C.accent, cursor: "pointer", fontWeight: 600 };
+
+// ================= 루트 =================
+function Root() {
+  const [user, setUser] = useState(undefined); // undefined=확인중, null=비로그인
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((u) => setUser(u));
+    return unsub;
+  }, []);
+
+  if (user === undefined) {
+    return <div style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", color: C.inkFaint, fontSize: 14 }}>불러오는 중…</div>;
+  }
+  return user ? <DiaryApp user={user} /> : <AuthScreen />;
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<Root />);
+</script>
+</body>
+</html>
