@@ -11,9 +11,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
 <!-- React (UMD, no build step) -->
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js" crossorigin></script>
 
 <style>
   * { box-sizing: border-box; }
@@ -29,6 +29,15 @@
 <body>
 <div id="root"></div>
 
+<script>
+  // 어떤 이유로든 스크립트가 실패하면 흰 화면 대신 에러를 화면에 표시
+  window.addEventListener('error', function (e) {
+    var root = document.getElementById('root');
+    if (root && !root.hasChildNodes()) {
+      root.innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#7A3B44;white-space:pre-wrap;">문제가 발생했어요:\n' + (e.message || e) + '</div>';
+    }
+  });
+</script>
 <script>
   // ---- Firebase 초기화 (제주플래너와 동일 프로젝트, 컬렉션만 분리) ----
   const firebaseConfig = {
