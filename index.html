@@ -102,7 +102,8 @@ const DETAIL_FIELDS = {
     { key: "rating", label: "별점", type: "rating" },
   ],
   "캠핑야외": [
-    { key: "place", label: "장소", type: "text", placeholder: "어디로 갔나요" },
+    { key: "placeType", label: "장소 유형", type: "select", options: ["산", "바다", "강", "캠핑장", "계곡", "기타"] },
+    { key: "place", label: "구체적 장소명", type: "text", placeholder: "어디로 갔나요" },
     { key: "gearNote", label: "준비물 특이사항", type: "text", placeholder: "빠뜨린 것/유용했던 것" },
     { key: "satisfaction", label: "체감 만족도", type: "rating" },
   ],
@@ -216,6 +217,7 @@ function DiaryApp({ user }) {
   const [strip, setStrip] = useState(() => centerStrip(new Date()));
   const [entry, setEntry] = useState(() => emptyEntry(toKey(new Date())));
   const [datesWithData, setDatesWithData] = useState(() => new Set());
+  const [detailSuggestions, setDetailSuggestions] = useState({}); // `${type}:${key}` -> string[]
   const [showSummary, setShowSummary] = useState(false);
   const [status, setStatus] = useState("");
   const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
@@ -225,14 +227,31 @@ function DiaryApp({ user }) {
 
   const docId = (dateKey) => `${user.uid}_${dateKey}`;
 
-  // 데이터 있는 날짜 목록 (내 기록만)
+  // 데이터 있는 날짜 목록 + 자유입력 자동완성 제안(같은 유형의 과거 입력값) 수집
   useEffect(() => {
     (async () => {
       try {
         const snap = await db.collection("diary_entries").where("uid", "==", user.uid).get();
-        const set = new Set();
-        snap.forEach((doc) => set.add(doc.data().date));
-        setDatesWithData(set);
+        const dateSet = new Set();
+        const sugMap = {}; // `${type}:${fieldKey}` -> Set of strings
+        snap.forEach((doc) => {
+          const d = doc.data();
+          dateSet.add(d.date);
+          if (d.type && d.details) {
+            Object.keys(d.details).forEach((k) => {
+              const v = d.details[k];
+              if (typeof v === "string" && v.trim()) {
+                const mapKey = `${d.type}:${k}`;
+                if (!sugMap[mapKey]) sugMap[mapKey] = new Set();
+                sugMap[mapKey].add(v.trim());
+              }
+            });
+          }
+        });
+        const sugObj = {};
+        Object.keys(sugMap).forEach((k) => { sugObj[k] = Array.from(sugMap[k]).sort(); });
+        setDatesWithData(dateSet);
+        setDetailSuggestions(sugObj);
       } catch (e) { /* 무시 */ }
     })();
   }, []);
@@ -408,7 +427,21 @@ function DiaryApp({ user }) {
                     ) : f.type === "select" ? (
                       <PillRow options={f.options} value={(entry.details || {})[f.key] || null} onChange={(v) => setDetail(f.key, v === (entry.details || {})[f.key] ? null : v)} />
                     ) : (
-                      <input placeholder={f.placeholder || ""} value={(entry.details || {})[f.key] || ""} onChange={(e) => setDetail(f.key, e.target.value)} style={underlineInput} />
+                      <>
+                        <input
+                          placeholder={f.placeholder || ""}
+                          value={(entry.details || {})[f.key] || ""}
+                          onChange={(e) => setDetail(f.key, e.target.value)}
+                          list={`sug-${entry.type}-${f.key}`}
+                          autoComplete="off"
+                          style={underlineInput}
+                        />
+                        <datalist id={`sug-${entry.type}-${f.key}`}>
+                          {(detailSuggestions[`${entry.type}:${f.key}`] || []).map((v) => (
+                            <option key={v} value={v} />
+                          ))}
+                        </datalist>
+                      </>
                     )}
                   </div>
                 ))}
