@@ -273,28 +273,23 @@ function DiaryApp({ user }) {
   const setDetail = (key, value) => save({ ...entry, details: { ...(entry.details || {}), [key]: value } });
 
   const addTransaction = () => {
-    const rawAmountInput = amountRef.current ? amountRef.current.value : "(입력창을 찾지 못함)";
-    const rawMemo = memoRef.current ? memoRef.current.value.trim() : "";
-    // 전각 숫자(１２３４ 등)를 일반 숫자로 변환 후 숫자만 추출
-    const normalized = (rawAmountInput || "").replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-    const digitsOnly = normalized.replace(/[^0-9]/g, "");
-    const amt = parseInt(digitsOnly, 10);
-
     if (!txDraft.category) { window.alert("카테고리를 먼저 선택해주세요"); return; }
-    if (!amt) {
-      window.alert(`금액을 입력해주세요\n\n[진단] 입력창에 실제로 들어있는 값: "${rawAmountInput}"`);
-      return;
-    }
 
-    const ok = window.confirm(`${txDraft.kind} · ${txDraft.category} · ${fmtWon(amt)}원${rawMemo ? " · " + rawMemo : ""}\n\n이 내용을 추가할까요?`);
+    const amountInput = window.prompt(`${txDraft.kind} · ${txDraft.category}\n\n금액을 숫자로 입력해주세요`, "");
+    if (amountInput === null) return; // 취소
+    const normalized = amountInput.replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const amt = parseInt(normalized.replace(/[^0-9]/g, ""), 10);
+    if (!amt) { window.alert(`금액이 올바르지 않아요. 입력하신 값: "${amountInput}"`); return; }
+
+    const memoInput = window.prompt("메모 (선택, 없으면 빈칸으로 확인)", "") || "";
+
+    const ok = window.confirm(`${txDraft.kind} · ${txDraft.category} · ${fmtWon(amt)}원${memoInput ? " · " + memoInput : ""}\n\n이 내용을 추가할까요?`);
     if (!ok) return;
 
-    const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: rawMemo };
+    const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: memoInput.trim() };
     const nextTransactions = [...entry.transactions, tx];
     save({ ...entry, transactions: nextTransactions });
     setTxDraft((d) => ({ ...d, category: null }));
-    if (amountRef.current) amountRef.current.value = "";
-    if (memoRef.current) memoRef.current.value = "";
 
     let newIncome = 0, newExpense = 0;
     for (const t of nextTransactions) { if (t.kind === "수입") newIncome += t.amount; else newExpense += t.amount; }
@@ -419,16 +414,8 @@ function DiaryApp({ user }) {
                 value={txDraft.category}
                 onChange={(v) => setTxDraft((d) => ({ ...d, category: v === d.category ? null : v }))}
               />
-              <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 8 }}>
-                <input placeholder="금액" inputMode="numeric" autoComplete="off" ref={amountRef}
-                  onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                  style={{ ...underlineInput, flex: 1, margin: 0 }} />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input placeholder="메모 (선택)" autoComplete="off" ref={memoRef}
-                  onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                  style={{ ...underlineInput, flex: 1, margin: 0 }} />
-                <button onClick={addTransaction} style={addBtnStyle}>추가</button>
+              <div style={{ marginTop: 12 }}>
+                <button onClick={addTransaction} style={{ ...addBtnStyle, width: "100%", padding: "12px 0" }}>+ 항목 추가</button>
               </div>
               {status && <div style={{ fontSize: 12.5, color: C.accent, marginTop: 8 }}>{status}</div>}
             </Section>
