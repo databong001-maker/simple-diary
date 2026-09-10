@@ -91,7 +91,8 @@ const DETAIL_FIELDS = {
     { key: "activity", label: "오늘 한 일", type: "text", placeholder: "오늘 한 일을 적어주세요" },
   ],
   "모임": [
-    { key: "withWhom", label: "누구와", type: "text", placeholder: "누구와 만났나요" },
+    { key: "relation", label: "관계 유형", type: "select", options: ["가족", "친구", "직장동료", "지인", "기타"] },
+    { key: "withWhom", label: "누구와", type: "text", placeholder: "구체적으로 누구와 만났나요" },
     { key: "place", label: "장소", type: "text", placeholder: "어디서 만났나요" },
     { key: "purpose", label: "무슨 얘기 · 목적", type: "text", placeholder: "어떤 자리였나요" },
   ],
