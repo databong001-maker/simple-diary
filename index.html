@@ -276,13 +276,22 @@ function DiaryApp({ user }) {
     const rawAmount = amountRef.current ? amountRef.current.value : "";
     const rawMemo = memoRef.current ? memoRef.current.value.trim() : "";
     const amt = parseInt(rawAmount.replace(/[^0-9]/g, ""), 10);
-    if (!txDraft.category) { setStatus("카테고리를 먼저 선택해주세요"); setTimeout(() => setStatus(""), 1800); return; }
-    if (!amt) { setStatus("금액을 입력해주세요"); setTimeout(() => setStatus(""), 1800); return; }
+    if (!txDraft.category) { window.alert("카테고리를 먼저 선택해주세요"); return; }
+    if (!amt) { window.alert("금액을 입력해주세요"); return; }
+
+    const ok = window.confirm(`${txDraft.kind} · ${txDraft.category} · ${fmtWon(amt)}원${rawMemo ? " · " + rawMemo : ""}\n\n이 내용을 추가할까요?`);
+    if (!ok) return;
+
     const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: rawMemo };
-    save({ ...entry, transactions: [...entry.transactions, tx] });
+    const nextTransactions = [...entry.transactions, tx];
+    save({ ...entry, transactions: nextTransactions });
     setTxDraft((d) => ({ ...d, category: null }));
     if (amountRef.current) amountRef.current.value = "";
     if (memoRef.current) memoRef.current.value = "";
+
+    let newIncome = 0, newExpense = 0;
+    for (const t of nextTransactions) { if (t.kind === "수입") newIncome += t.amount; else newExpense += t.amount; }
+    window.alert(`추가됐어요.\n\n오늘 총 항목 수: ${nextTransactions.length}개\n총 수입: ${fmtWon(newIncome)}원\n총 지출: ${fmtWon(newExpense)}원`);
   };
   const removeTransaction = (id) => save({ ...entry, transactions: entry.transactions.filter((t) => t.id !== id) });
 
