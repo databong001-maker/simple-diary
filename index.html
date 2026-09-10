@@ -81,6 +81,10 @@ const MOODS = ["좋음", "평온", "설렘", "피곤", "속상", "복잡"];
 const WEATHERS = ["맑음", "흐림", "비", "눈", "바람"];
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 가계부 표준 카테고리 (월간/연간 결산을 위해 자유입력 대신 고정 목록에서 선택)
+const EXPENSE_CATEGORIES = ["식비", "교통비", "주거/공과금", "통신비", "구독", "의료/건강", "문화/여가", "의류/미용", "경조사/모임", "교육", "기타"];
+const INCOME_CATEGORIES = ["급여", "부수입", "용돈", "기타"];
+
 // 유형별 세부 기록 항목
 const DETAIL_FIELDS = {
   "일상": [
@@ -212,7 +216,7 @@ function DiaryApp({ user }) {
   const [datesWithData, setDatesWithData] = useState(() => new Set());
   const [showSummary, setShowSummary] = useState(false);
   const [status, setStatus] = useState("");
-  const [txDraft, setTxDraft] = useState({ kind: "지출", category: "", amount: "", memo: "" });
+  const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
   const [loading, setLoading] = useState(true);
 
   const docId = (dateKey) => `${user.uid}_${dateKey}`;
@@ -268,10 +272,10 @@ function DiaryApp({ user }) {
 
   const addTransaction = () => {
     const amt = parseInt(txDraft.amount.replace(/[^0-9]/g, ""), 10);
-    if (!amt || !txDraft.category.trim()) return;
-    const tx = { id: Date.now().toString(36), kind: txDraft.kind, category: txDraft.category.trim(), amount: amt, memo: txDraft.memo.trim() };
+    if (!amt || !txDraft.category) return;
+    const tx = { id: Date.now().toString(36), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: txDraft.memo.trim() };
     save({ ...entry, transactions: [...entry.transactions, tx] });
-    setTxDraft({ kind: "지출", category: "", amount: "", memo: "" });
+    setTxDraft({ kind: txDraft.kind, category: null, amount: "", memo: "" });
   };
   const removeTransaction = (id) => save({ ...entry, transactions: entry.transactions.filter((t) => t.id !== id) });
 
@@ -378,17 +382,22 @@ function DiaryApp({ user }) {
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                 {["지출", "수입"].map((k) => (
-                  <button key={k} onClick={() => setTxDraft((d) => ({ ...d, kind: k }))}
+                  <button key={k} onClick={() => setTxDraft((d) => ({ ...d, kind: k, category: null }))}
                     style={{ ...smallPill, background: txDraft.kind === k ? C.ink : "transparent", color: txDraft.kind === k ? "#fff" : C.inkSoft, borderColor: txDraft.kind === k ? C.ink : C.line }}>
                     {k}
                   </button>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <input placeholder="카테고리" value={txDraft.category} onChange={(e) => setTxDraft((d) => ({ ...d, category: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
-                <input placeholder="금액" inputMode="numeric" value={txDraft.amount} onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))} style={{ ...underlineInput, width: 90, margin: 0 }} />
+              <FieldLabel>카테고리</FieldLabel>
+              <PillRow
+                options={txDraft.kind === "수입" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES}
+                value={txDraft.category}
+                onChange={(v) => setTxDraft((d) => ({ ...d, category: v === d.category ? null : v }))}
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 8 }}>
+                <input placeholder="금액" inputMode="numeric" value={txDraft.amount} onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input placeholder="메모 (선택)" value={txDraft.memo} onChange={(e) => setTxDraft((d) => ({ ...d, memo: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
