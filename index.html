@@ -272,8 +272,9 @@ function DiaryApp({ user }) {
 
   const addTransaction = () => {
     const amt = parseInt(txDraft.amount.replace(/[^0-9]/g, ""), 10);
-    if (!amt || !txDraft.category) return;
-    const tx = { id: Date.now().toString(36), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: txDraft.memo.trim() };
+    if (!txDraft.category) { setStatus("카테고리를 먼저 선택해주세요"); setTimeout(() => setStatus(""), 1800); return; }
+    if (!amt) { setStatus("금액을 입력해주세요"); setTimeout(() => setStatus(""), 1800); return; }
+    const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: txDraft.memo.trim() };
     save({ ...entry, transactions: [...entry.transactions, tx] });
     setTxDraft({ kind: txDraft.kind, category: null, amount: "", memo: "" });
   };
@@ -397,12 +398,19 @@ function DiaryApp({ user }) {
                 onChange={(v) => setTxDraft((d) => ({ ...d, category: v === d.category ? null : v }))}
               />
               <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 8 }}>
-                <input placeholder="금액" inputMode="numeric" value={txDraft.amount} onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
+                <input placeholder="금액" inputMode="numeric" value={txDraft.amount}
+                  onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                  style={{ ...underlineInput, flex: 1, margin: 0 }} />
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input placeholder="메모 (선택)" value={txDraft.memo} onChange={(e) => setTxDraft((d) => ({ ...d, memo: e.target.value }))} style={{ ...underlineInput, flex: 1, margin: 0 }} />
+                <input placeholder="메모 (선택)" value={txDraft.memo}
+                  onChange={(e) => setTxDraft((d) => ({ ...d, memo: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                  style={{ ...underlineInput, flex: 1, margin: 0 }} />
                 <button onClick={addTransaction} style={addBtnStyle}>추가</button>
               </div>
+              {status && <div style={{ fontSize: 12.5, color: C.accent, marginTop: 8 }}>{status}</div>}
             </Section>
 
             <Section title="하루 마무리">
