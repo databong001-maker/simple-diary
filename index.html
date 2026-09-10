@@ -304,6 +304,19 @@ function DiaryApp({ user }) {
     return { income, expense };
   }, [entry.transactions]);
 
+  const resetEntry = async () => {
+    const ok = window.confirm(`${dateLabel} 기록을 전부 초기화할까요?\n되돌릴 수 없어요.`);
+    if (!ok) return;
+    const key = toKey(selected);
+    try {
+      await db.collection("diary_entries").doc(docId(key)).delete();
+    } catch (e) { /* 문서가 없었을 수도 있음 */ }
+    setEntry(emptyEntry(key));
+    setDatesWithData((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    setStatus("초기화됨");
+    setTimeout(() => setStatus(""), 1200);
+  };
+
   const goPrevWeek = () => { const nd = new Date(strip[0]); nd.setDate(nd.getDate() - 4); setStrip(centerStrip(nd)); };
   const goNextWeek = () => { const nd = new Date(strip[strip.length - 1]); nd.setDate(nd.getDate() + 4); setStrip(centerStrip(nd)); };
 
@@ -315,11 +328,32 @@ function DiaryApp({ user }) {
         <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: 13, color: C.inkFaint }}>간편다이어리</div>
-            <div style={{ fontFamily: FONT_SERIF, fontSize: 26, marginTop: 2 }}>{dateLabel}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <div style={{ fontFamily: FONT_SERIF, fontSize: 26, marginTop: 2 }}>{dateLabel}</div>
+              <label htmlFor="date-jump" style={{ fontSize: 15, color: C.inkFaint, cursor: "pointer" }}>📅</label>
+              <input
+                id="date-jump"
+                type="date"
+                value={toKey(selected)}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  const [y, m, d] = e.target.value.split("-").map(Number);
+                  const nd = new Date(y, m - 1, d);
+                  setSelected(nd);
+                  setStrip(centerStrip(nd));
+                }}
+                style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+              />
+            </div>
           </div>
-          <button onClick={() => auth.signOut()} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer", marginTop: 6 }}>
-            로그아웃
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, marginTop: 4 }}>
+            <button onClick={() => auth.signOut()} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer" }}>
+              로그아웃
+            </button>
+            <button onClick={resetEntry} style={{ background: "none", border: "none", color: C.expense, fontSize: 12, cursor: "pointer" }}>
+              이 날짜 초기화
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
