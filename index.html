@@ -81,6 +81,41 @@ const MOODS = ["좋음", "평온", "설렘", "피곤", "속상", "복잡"];
 const WEATHERS = ["맑음", "흐림", "비", "눈", "바람"];
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 유형별 세부 기록 항목
+const DETAIL_FIELDS = {
+  "일상": [
+    { key: "activity", label: "오늘 한 일", type: "text", placeholder: "오늘 한 일을 적어주세요" },
+  ],
+  "모임": [
+    { key: "withWhom", label: "누구와", type: "text", placeholder: "누구와 만났나요" },
+    { key: "place", label: "장소", type: "text", placeholder: "어디서 만났나요" },
+    { key: "purpose", label: "무슨 얘기 · 목적", type: "text", placeholder: "어떤 자리였나요" },
+  ],
+  "전시관람": [
+    { key: "place", label: "전시 · 장소명", type: "text", placeholder: "어떤 전시였나요" },
+    { key: "impression", label: "한 줄 감상", type: "text", placeholder: "느낀 점을 적어주세요" },
+    { key: "rating", label: "별점", type: "rating" },
+  ],
+  "캠핑야외": [
+    { key: "place", label: "장소", type: "text", placeholder: "어디로 갔나요" },
+    { key: "gearNote", label: "준비물 특이사항", type: "text", placeholder: "빠뜨린 것/유용했던 것" },
+    { key: "satisfaction", label: "체감 만족도", type: "rating" },
+  ],
+  "여행관광": [
+    { key: "place", label: "방문지", type: "text", placeholder: "어디를 방문했나요" },
+    { key: "transport", label: "이동수단", type: "text", placeholder: "어떻게 이동했나요" },
+    { key: "recommend", label: "한 줄 추천 포인트", type: "text", placeholder: "다음에 갈 사람에게 팁" },
+  ],
+  "업무프로젝트": [
+    { key: "projectName", label: "프로젝트명", type: "text", placeholder: "어떤 프로젝트인가요" },
+    { key: "status", label: "진행 상태", type: "select", options: ["시작", "진행중", "완료"] },
+    { key: "memo", label: "메모", type: "text", placeholder: "특이사항" },
+  ],
+  "기타": [
+    { key: "memo", label: "자유 메모", type: "text", placeholder: "자유롭게 적어주세요" },
+  ],
+};
+
 const pad = (n) => String(n).padStart(2, "0");
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fmtWon = (n) => n.toLocaleString("ko-KR");
@@ -88,7 +123,7 @@ const fmtWon = (n) => n.toLocaleString("ko-KR");
 function emptyEntry(dateKey) {
   return {
     date: dateKey, type: null, mood: null, weather: null, weatherNote: "",
-    transactions: [], summary: "", tomorrow: "",
+    transactions: [], summary: "", tomorrow: "", details: {},
   };
 }
 function centerStrip(d) {
@@ -229,6 +264,7 @@ function DiaryApp({ user }) {
   }, [user.uid]);
 
   const setField = (field, value) => save({ ...entry, [field]: value });
+  const setDetail = (key, value) => save({ ...entry, details: { ...(entry.details || {}), [key]: value } });
 
   const addTransaction = () => {
     const amt = parseInt(txDraft.amount.replace(/[^0-9]/g, ""), 10);
@@ -303,6 +339,23 @@ function DiaryApp({ user }) {
               <PillRow options={WEATHERS} value={entry.weather} onChange={(v) => setField("weather", v === entry.weather ? null : v)} />
               <input placeholder="한 줄 환경 메모 (선택)" value={entry.weatherNote} onChange={(e) => setField("weatherNote", e.target.value)} style={underlineInput} />
             </Section>
+
+            {entry.type && DETAIL_FIELDS[entry.type] && (
+              <Section title={`${entry.type} 세부 기록`}>
+                {DETAIL_FIELDS[entry.type].map((f, i) => (
+                  <div key={f.key} style={{ marginTop: i === 0 ? 0 : 16 }}>
+                    <FieldLabel>{f.label}</FieldLabel>
+                    {f.type === "rating" ? (
+                      <RatingRow value={(entry.details || {})[f.key] || 0} onChange={(v) => setDetail(f.key, v)} />
+                    ) : f.type === "select" ? (
+                      <PillRow options={f.options} value={(entry.details || {})[f.key] || null} onChange={(v) => setDetail(f.key, v === (entry.details || {})[f.key] ? null : v)} />
+                    ) : (
+                      <input placeholder={f.placeholder || ""} value={(entry.details || {})[f.key] || ""} onChange={(e) => setDetail(f.key, e.target.value)} style={underlineInput} />
+                    )}
+                  </div>
+                ))}
+              </Section>
+            )}
 
             <Section title="수입 · 지출">
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -387,6 +440,18 @@ function PillRow({ options, value, onChange }) {
     </div>
   );
 }
+function RatingRow({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} onClick={() => onChange(n === value ? 0 : n)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, padding: 0, color: n <= value ? C.accent : C.line }}>
+          ★
+        </button>
+      ))}
+    </div>
+  );
+}
 function Totals({ label, value, color }) {
   return (
     <div style={{ flex: 1, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 12px" }}>
@@ -401,10 +466,20 @@ function SummaryCard({ entry, dateLabel, totals }) {
   if (totals.income > 0) moneyParts.push(`수입 ${fmtWon(totals.income)}원`);
   if (totals.expense > 0) moneyParts.push(`지출 ${fmtWon(totals.expense)}원`);
   const txDetail = entry.transactions.map((t) => `${t.category} ${fmtWon(t.amount)}`).join(" · ");
+  const detailFields = (entry.type && DETAIL_FIELDS[entry.type]) || [];
+  const detailParts = detailFields
+    .map((f) => {
+      const v = (entry.details || {})[f.key];
+      if (!v) return null;
+      if (f.type === "rating") return `${f.label} ${"★".repeat(v)}`;
+      return `${f.label} ${v}`;
+    })
+    .filter(Boolean);
   const lines = [
     { show: true, node: <div style={{ fontFamily: FONT_SERIF, fontSize: 19 }}>{dateLabel}</div> },
     { show: !!weatherLine, node: <Line label="날씨">{weatherLine}</Line> },
     { show: !!(entry.mood || entry.type), node: <Line label="기분/유형">{[entry.mood, entry.type].filter(Boolean).join(" · ")}</Line> },
+    { show: detailParts.length > 0, node: <Line label="세부">{detailParts.join(" · ")}</Line> },
     { show: moneyParts.length > 0, node: <Line label="가계부">{moneyParts.join(" · ")}</Line> },
     { show: !!txDetail, node: <Line label="내역">{txDetail}</Line> },
     { show: !!entry.summary, node: <div style={{ marginTop: 10, fontSize: 15, fontStyle: "italic" }}>“{entry.summary}”</div> },
