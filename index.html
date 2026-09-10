@@ -56,7 +56,7 @@
   window.__db = db;
 </script>
 
-<script type="text/babel" data-presets="react">
+<script type="text/plain" id="app-src">
 const { useState, useEffect, useMemo, useCallback } = React;
 const auth = window.__auth;
 const db = window.__db;
@@ -449,6 +449,15 @@ function Root() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<Root />);
+</script>
+<script>
+  // Babel의 자동 스캔(text/babel) 대신 수동으로 변환 실행 - classic 런타임 강제 지정으로
+  // 자동 JSX 런타임이 import 구문을 끼워 넣어 발생하는 오류를 방지함
+  (function () {
+    var src = document.getElementById("app-src").textContent;
+    var code = Babel.transform(src, { presets: [["react", { runtime: "classic" }]] }).code;
+    (0, eval)(code);
+  })();
 </script>
 </body>
 </html>
