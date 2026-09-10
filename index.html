@@ -57,7 +57,7 @@
 </script>
 
 <script type="text/plain" id="app-src">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 const auth = window.__auth;
 const db = window.__db;
 
@@ -217,6 +217,8 @@ function DiaryApp({ user }) {
   const [showSummary, setShowSummary] = useState(false);
   const [status, setStatus] = useState("");
   const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
+  const amountRef = useRef(null);
+  const memoRef = useRef(null);
   const [loading, setLoading] = useState(true);
 
   const docId = (dateKey) => `${user.uid}_${dateKey}`;
@@ -271,12 +273,16 @@ function DiaryApp({ user }) {
   const setDetail = (key, value) => save({ ...entry, details: { ...(entry.details || {}), [key]: value } });
 
   const addTransaction = () => {
-    const amt = parseInt(txDraft.amount.replace(/[^0-9]/g, ""), 10);
+    const rawAmount = amountRef.current ? amountRef.current.value : "";
+    const rawMemo = memoRef.current ? memoRef.current.value.trim() : "";
+    const amt = parseInt(rawAmount.replace(/[^0-9]/g, ""), 10);
     if (!txDraft.category) { setStatus("카테고리를 먼저 선택해주세요"); setTimeout(() => setStatus(""), 1800); return; }
     if (!amt) { setStatus("금액을 입력해주세요"); setTimeout(() => setStatus(""), 1800); return; }
-    const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: txDraft.memo.trim() };
+    const tx = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: txDraft.kind, category: txDraft.category, amount: amt, memo: rawMemo };
     save({ ...entry, transactions: [...entry.transactions, tx] });
-    setTxDraft({ kind: txDraft.kind, category: null, amount: "", memo: "" });
+    setTxDraft((d) => ({ ...d, category: null }));
+    if (amountRef.current) amountRef.current.value = "";
+    if (memoRef.current) memoRef.current.value = "";
   };
   const removeTransaction = (id) => save({ ...entry, transactions: entry.transactions.filter((t) => t.id !== id) });
 
@@ -398,14 +404,12 @@ function DiaryApp({ user }) {
                 onChange={(v) => setTxDraft((d) => ({ ...d, category: v === d.category ? null : v }))}
               />
               <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 8 }}>
-                <input placeholder="금액" inputMode="numeric" value={txDraft.amount}
-                  onChange={(e) => setTxDraft((d) => ({ ...d, amount: e.target.value }))}
+                <input placeholder="금액" inputMode="numeric" autoComplete="off" ref={amountRef}
                   onKeyDown={(e) => e.key === "Enter" && addTransaction()}
                   style={{ ...underlineInput, flex: 1, margin: 0 }} />
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input placeholder="메모 (선택)" value={txDraft.memo}
-                  onChange={(e) => setTxDraft((d) => ({ ...d, memo: e.target.value }))}
+                <input placeholder="메모 (선택)" autoComplete="off" ref={memoRef}
                   onKeyDown={(e) => e.key === "Enter" && addTransaction()}
                   style={{ ...underlineInput, flex: 1, margin: 0 }} />
                 <button onClick={addTransaction} style={addBtnStyle}>추가</button>
