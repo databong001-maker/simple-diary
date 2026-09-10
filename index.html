@@ -273,11 +273,18 @@ function DiaryApp({ user }) {
   const setDetail = (key, value) => save({ ...entry, details: { ...(entry.details || {}), [key]: value } });
 
   const addTransaction = () => {
-    const rawAmount = amountRef.current ? amountRef.current.value : "";
+    const rawAmountInput = amountRef.current ? amountRef.current.value : "(입력창을 찾지 못함)";
     const rawMemo = memoRef.current ? memoRef.current.value.trim() : "";
-    const amt = parseInt(rawAmount.replace(/[^0-9]/g, ""), 10);
+    // 전각 숫자(１２３４ 등)를 일반 숫자로 변환 후 숫자만 추출
+    const normalized = (rawAmountInput || "").replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const digitsOnly = normalized.replace(/[^0-9]/g, "");
+    const amt = parseInt(digitsOnly, 10);
+
     if (!txDraft.category) { window.alert("카테고리를 먼저 선택해주세요"); return; }
-    if (!amt) { window.alert("금액을 입력해주세요"); return; }
+    if (!amt) {
+      window.alert(`금액을 입력해주세요\n\n[진단] 입력창에 실제로 들어있는 값: "${rawAmountInput}"`);
+      return;
+    }
 
     const ok = window.confirm(`${txDraft.kind} · ${txDraft.category} · ${fmtWon(amt)}원${rawMemo ? " · " + rawMemo : ""}\n\n이 내용을 추가할까요?`);
     if (!ok) return;
