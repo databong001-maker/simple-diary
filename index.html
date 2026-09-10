@@ -106,8 +106,9 @@ const DETAIL_FIELDS = {
     { key: "satisfaction", label: "체감 만족도", type: "rating" },
   ],
   "여행관광": [
-    { key: "place", label: "방문지", type: "text", placeholder: "어디를 방문했나요" },
-    { key: "transport", label: "이동수단", type: "text", placeholder: "어떻게 이동했나요" },
+    { key: "placeType", label: "방문지 유형", type: "select", options: ["시내", "산", "바다", "강", "유적지/역사", "카페거리", "테마파크", "기타"] },
+    { key: "place", label: "구체적 장소명", type: "text", placeholder: "어디를 방문했나요" },
+    { key: "transport", label: "이동수단", type: "select", options: ["도보", "자차", "대중교통", "택시", "자전거", "비행기/기차"] },
     { key: "recommend", label: "한 줄 추천 포인트", type: "text", placeholder: "다음에 갈 사람에게 팁" },
   ],
   "업무프로젝트": [
