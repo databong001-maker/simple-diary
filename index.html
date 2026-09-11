@@ -221,7 +221,8 @@ function DiaryApp({ user }) {
   const [detailSuggestions, setDetailSuggestions] = useState({}); // `${type}:${key}` -> string[]
   const [allEntries, setAllEntries] = useState([]); // 통계용 전체 엔트리 캐시
   const [showStats, setShowStats] = useState(false);
-  const [statsMonth, setStatsMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
+  const [statsPeriodType, setStatsPeriodType] = useState("month"); // "week" | "month" | "year"
+  const [statsRefDate, setStatsRefDate] = useState(() => new Date());
   const [showSummary, setShowSummary] = useState(false);
   const [status, setStatus] = useState("");
   const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
@@ -392,7 +393,20 @@ function DiaryApp({ user }) {
         </div>
 
         {showStats ? (
-          <StatsView entries={allEntries} month={statsMonth} setMonth={setStatsMonth} />
+          <StatsView
+            entries={allEntries}
+            periodType={statsPeriodType}
+            setPeriodType={setStatsPeriodType}
+            refDate={statsRefDate}
+            setRefDate={setStatsRefDate}
+            onJumpToDate={(dateStr) => {
+              const [y, m, d] = dateStr.split("-").map(Number);
+              const nd = new Date(y, m - 1, d);
+              setSelected(nd);
+              setStrip(centerStrip(nd));
+              setShowStats(false);
+            }}
+          />
         ) : (
         <>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
@@ -531,17 +545,46 @@ function DiaryApp({ user }) {
   );
 }
 
-function StatsView({ entries, month, setMonth }) {
-  const monthKey = `${month.y}-${pad(month.m)}`;
-  const monthEntries = entries.filter((e) => e.date && e.date.startsWith(monthKey));
+function weekRangeOf(d) {
+  const start = new Date(d);
+  start.setDate(d.getDate() - d.getDay()); // 일요일 시작
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return [start, end];
+}
+function weekNumberOf(d) {
+  const start = new Date(d.getFullYear(), 0, 1);
+  const days = Math.floor((d - start) / 86400000) + 1;
+  return Math.ceil((days + start.getDay()) / 7);
+}
+function inPeriod(dateStr, periodType, refDate) {
+  if (!dateStr) return false;
+  if (periodType === "month") {
+    return dateStr.startsWith(`${refDate.getFullYear()}-${pad(refDate.getMonth() + 1)}`);
+  }
+  if (periodType === "year") {
+    return dateStr.startsWith(`${refDate.getFullYear()}`);
+  }
+  const [s, e] = weekRangeOf(refDate);
+  return dateStr >= toKey(s) && dateStr <= toKey(e);
+}
+
+function StatsView({ entries, periodType, setPeriodType, refDate, setRefDate, onJumpToDate }) {
+  const [expanded, setExpanded] = useState(null); // 펼쳐진 항목의 key
+
+  const periodEntries = entries.filter((e) => inPeriod(e.date, periodType, refDate));
 
   let income = 0, expense = 0;
   const catTotals = {};
-  const typeCounts = {};
-  const detailCounts = {};
+  const typeCounts = {}; // type -> {count, dates:[]}
+  const detailCounts = {}; // group -> {value -> {count, dates:[]}}
 
-  monthEntries.forEach((e) => {
-    if (e.type) typeCounts[e.type] = (typeCounts[e.type] || 0) + 1;
+  periodEntries.forEach((e) => {
+    if (e.type) {
+      if (!typeCounts[e.type]) typeCounts[e.type] = { count: 0, dates: [] };
+      typeCounts[e.type].count += 1;
+      typeCounts[e.type].dates.push(e.date);
+    }
     (e.transactions || []).forEach((t) => {
       if (t.kind === "수입") income += t.amount; else expense += t.amount;
       if (!catTotals[t.category]) catTotals[t.category] = { income: 0, expense: 0 };
@@ -554,7 +597,9 @@ function StatsView({ entries, month, setMonth }) {
           if (v) {
             const groupKey = `${e.type} · ${f.label}`;
             if (!detailCounts[groupKey]) detailCounts[groupKey] = {};
-            detailCounts[groupKey][v] = (detailCounts[groupKey][v] || 0) + 1;
+            if (!detailCounts[groupKey][v]) detailCounts[groupKey][v] = { count: 0, dates: [] };
+            detailCounts[groupKey][v].count += 1;
+            detailCounts[groupKey][v].dates.push(e.date);
           }
         }
       });
@@ -562,24 +607,68 @@ function StatsView({ entries, month, setMonth }) {
   });
 
   const sortedCats = Object.entries(catTotals).sort((a, b) => b[1].expense - a[1].expense);
-  const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+  const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1].count - a[1].count);
 
-  const goPrevMonth = () => { let y = month.y, m = month.m - 1; if (m < 1) { m = 12; y--; } setMonth({ y, m }); };
-  const goNextMonth = () => { let y = month.y, m = month.m + 1; if (m > 12) { m = 1; y++; } setMonth({ y, m }); };
+  const goPrev = () => {
+    const nd = new Date(refDate);
+    if (periodType === "week") nd.setDate(nd.getDate() - 7);
+    else if (periodType === "month") nd.setMonth(nd.getMonth() - 1);
+    else nd.setFullYear(nd.getFullYear() - 1);
+    setRefDate(nd);
+  };
+  const goNext = () => {
+    const nd = new Date(refDate);
+    if (periodType === "week") nd.setDate(nd.getDate() + 7);
+    else if (periodType === "month") nd.setMonth(nd.getMonth() + 1);
+    else nd.setFullYear(nd.getFullYear() + 1);
+    setRefDate(nd);
+  };
+
+  let periodLabel;
+  if (periodType === "week") {
+    const [s, e] = weekRangeOf(refDate);
+    periodLabel = `${refDate.getFullYear()}년 ${weekNumberOf(refDate)}주차 (${s.getMonth() + 1}/${s.getDate()}~${e.getMonth() + 1}/${e.getDate()})`;
+  } else if (periodType === "month") {
+    periodLabel = `${refDate.getFullYear()}년 ${refDate.getMonth() + 1}월`;
+  } else {
+    periodLabel = `${refDate.getFullYear()}년`;
+  }
+
+  const toggle = (key) => setExpanded((cur) => (cur === key ? null : key));
+
+  const DateList = ({ dates }) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8, marginBottom: 4 }}>
+      {Array.from(new Set(dates)).sort().map((d) => (
+        <button key={d} onClick={() => onJumpToDate(d)}
+          style={{ ...smallPill, borderColor: C.accent, color: C.accent }}>
+          {d.slice(5).replace("-", "/")}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-        <button onClick={goPrevMonth} style={navBtnStyle}>‹</button>
-        <div style={{ fontFamily: FONT_SERIF, fontSize: 20 }}>{month.y}년 {month.m}월 통계</div>
-        <button onClick={goNextMonth} style={navBtnStyle}>›</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[["week", "주간"], ["month", "월간"], ["year", "연간"]].map(([k, label]) => (
+          <button key={k} onClick={() => setPeriodType(k)}
+            style={{ ...smallPill, background: periodType === k ? C.ink : "transparent", color: periodType === k ? "#fff" : C.inkSoft, borderColor: periodType === k ? C.ink : C.line }}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {monthEntries.length === 0 ? (
-        <div style={{ color: C.inkFaint, fontSize: 14, padding: "30px 0", textAlign: "center" }}>이 달엔 기록이 없어요.</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+        <button onClick={goPrev} style={navBtnStyle}>‹</button>
+        <div style={{ fontFamily: FONT_SERIF, fontSize: 18 }}>{periodLabel}</div>
+        <button onClick={goNext} style={navBtnStyle}>›</button>
+      </div>
+
+      {periodEntries.length === 0 ? (
+        <div style={{ color: C.inkFaint, fontSize: 14, padding: "30px 0", textAlign: "center" }}>이 기간엔 기록이 없어요.</div>
       ) : (
         <>
-          <Section title="이번 달 가계부">
+          <Section title="가계부">
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <Totals label="수입" value={income} color={C.income} />
               <Totals label="지출" value={expense} color={C.expense} />
@@ -599,24 +688,38 @@ function StatsView({ entries, month, setMonth }) {
             )}
           </Section>
 
-          <Section title="이번 달 하루 유형">
-            {sortedTypes.map(([t, c]) => (
-              <div key={t} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
-                <span>{t}</span><span>{c}일</span>
-              </div>
-            ))}
+          <Section title="하루 유형">
+            {sortedTypes.map(([t, info]) => {
+              const key = `type:${t}`;
+              const isOpen = expanded === key;
+              return (
+                <div key={t} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <button onClick={() => toggle(key)} style={{ width: "100%", background: "none", border: "none", padding: "6px 0", display: "flex", justifyContent: "space-between", cursor: "pointer", fontSize: 14, color: C.ink, fontFamily: FONT_SANS }}>
+                    <span>{t}</span><span>{info.count}일 {isOpen ? "▲" : "▾"}</span>
+                  </button>
+                  {isOpen && <DateList dates={info.dates} />}
+                </div>
+              );
+            })}
           </Section>
 
           {Object.keys(detailCounts).length > 0 && (
-            <Section title="세부 항목 통계">
-              {Object.entries(detailCounts).map(([group, counts]) => (
+            <Section title="세부 항목">
+              {Object.entries(detailCounts).map(([group, values]) => (
                 <div key={group} style={{ marginBottom: 14 }}>
                   <FieldLabel>{group}</FieldLabel>
-                  {Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([v, c]) => (
-                    <div key={v} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
-                      <span>{v}</span><span>{c}회</span>
-                    </div>
-                  ))}
+                  {Object.entries(values).sort((a, b) => b[1].count - a[1].count).map(([v, info]) => {
+                    const key = `${group}:${v}`;
+                    const isOpen = expanded === key;
+                    return (
+                      <div key={v}>
+                        <button onClick={() => toggle(key)} style={{ width: "100%", background: "none", border: "none", padding: "4px 0", display: "flex", justifyContent: "space-between", cursor: "pointer", fontSize: 14, color: C.ink, fontFamily: FONT_SANS }}>
+                          <span>{v}</span><span>{info.count}회 {isOpen ? "▲" : "▾"}</span>
+                        </button>
+                        {isOpen && <DateList dates={info.dates} />}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </Section>
