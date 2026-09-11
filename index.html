@@ -97,6 +97,7 @@ const DETAIL_FIELDS = {
     { key: "purpose", label: "무슨 얘기 · 목적", type: "text", placeholder: "어떤 자리였나요" },
   ],
   "전시관람": [
+    { key: "viewType", label: "관람 형태", type: "select", options: ["미술 전시", "사진 전시", "박물관", "공연/뮤지컬", "영화", "기타"] },
     { key: "place", label: "전시 · 장소명", type: "text", placeholder: "어떤 전시였나요" },
     { key: "impression", label: "한 줄 감상", type: "text", placeholder: "느낀 점을 적어주세요" },
     { key: "rating", label: "별점", type: "rating" },
@@ -218,6 +219,9 @@ function DiaryApp({ user }) {
   const [entry, setEntry] = useState(() => emptyEntry(toKey(new Date())));
   const [datesWithData, setDatesWithData] = useState(() => new Set());
   const [detailSuggestions, setDetailSuggestions] = useState({}); // `${type}:${key}` -> string[]
+  const [allEntries, setAllEntries] = useState([]); // 통계용 전체 엔트리 캐시
+  const [showStats, setShowStats] = useState(false);
+  const [statsMonth, setStatsMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
   const [showSummary, setShowSummary] = useState(false);
   const [status, setStatus] = useState("");
   const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
@@ -227,15 +231,17 @@ function DiaryApp({ user }) {
 
   const docId = (dateKey) => `${user.uid}_${dateKey}`;
 
-  // 데이터 있는 날짜 목록 + 자유입력 자동완성 제안(같은 유형의 과거 입력값) 수집
+  // 데이터 있는 날짜 목록 + 자유입력 자동완성 제안 + 통계용 전체 엔트리 수집
   useEffect(() => {
     (async () => {
       try {
         const snap = await db.collection("diary_entries").where("uid", "==", user.uid).get();
         const dateSet = new Set();
         const sugMap = {}; // `${type}:${fieldKey}` -> Set of strings
+        const entries = [];
         snap.forEach((doc) => {
           const d = doc.data();
+          entries.push(d);
           dateSet.add(d.date);
           if (d.type && d.details) {
             Object.keys(d.details).forEach((k) => {
@@ -252,6 +258,7 @@ function DiaryApp({ user }) {
         Object.keys(sugMap).forEach((k) => { sugObj[k] = Array.from(sugMap[k]).sort(); });
         setDatesWithData(dateSet);
         setDetailSuggestions(sugObj);
+        setAllEntries(entries);
       } catch (e) { /* 무시 */ }
     })();
   }, []);
@@ -282,6 +289,10 @@ function DiaryApp({ user }) {
         { merge: true }
       );
       setDatesWithData((prev) => new Set(prev).add(key));
+      setAllEntries((prev) => {
+        const others = prev.filter((e) => e.date !== key);
+        return [...others, { ...next, uid: user.uid }];
+      });
       setStatus("저장됨");
       setTimeout(() => setStatus(""), 1200);
     } catch (e) {
@@ -333,6 +344,7 @@ function DiaryApp({ user }) {
     } catch (e) { /* 문서가 없었을 수도 있음 */ }
     setEntry(emptyEntry(key));
     setDatesWithData((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    setAllEntries((prev) => prev.filter((e) => e.date !== key));
     setStatus("초기화됨");
     setTimeout(() => setStatus(""), 1200);
   };
@@ -370,12 +382,19 @@ function DiaryApp({ user }) {
             <button onClick={() => auth.signOut()} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer" }}>
               로그아웃
             </button>
+            <button onClick={() => setShowStats((s) => !s)} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
+              {showStats ? "일기로 돌아가기" : "📊 통계 보기"}
+            </button>
             <button onClick={resetEntry} style={{ background: "none", border: "none", color: C.expense, fontSize: 12, cursor: "pointer" }}>
               이 날짜 초기화
             </button>
           </div>
         </div>
 
+        {showStats ? (
+          <StatsView entries={allEntries} month={statsMonth} setMonth={setStatsMonth} />
+        ) : (
+        <>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
           <button onClick={goPrevWeek} style={navBtnStyle}>‹</button>
           <div style={{ display: "flex", flex: 1, justifyContent: "space-between" }}>
@@ -505,7 +524,105 @@ function DiaryApp({ user }) {
             <div style={{ textAlign: "center", fontSize: 12, color: C.inkFaint, height: 20, marginTop: 10 }}>{status}</div>
           </>
         )}
+        </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function StatsView({ entries, month, setMonth }) {
+  const monthKey = `${month.y}-${pad(month.m)}`;
+  const monthEntries = entries.filter((e) => e.date && e.date.startsWith(monthKey));
+
+  let income = 0, expense = 0;
+  const catTotals = {};
+  const typeCounts = {};
+  const detailCounts = {};
+
+  monthEntries.forEach((e) => {
+    if (e.type) typeCounts[e.type] = (typeCounts[e.type] || 0) + 1;
+    (e.transactions || []).forEach((t) => {
+      if (t.kind === "수입") income += t.amount; else expense += t.amount;
+      if (!catTotals[t.category]) catTotals[t.category] = { income: 0, expense: 0 };
+      if (t.kind === "수입") catTotals[t.category].income += t.amount; else catTotals[t.category].expense += t.amount;
+    });
+    if (e.type && e.details && DETAIL_FIELDS[e.type]) {
+      DETAIL_FIELDS[e.type].forEach((f) => {
+        if (f.type === "select") {
+          const v = e.details[f.key];
+          if (v) {
+            const groupKey = `${e.type} · ${f.label}`;
+            if (!detailCounts[groupKey]) detailCounts[groupKey] = {};
+            detailCounts[groupKey][v] = (detailCounts[groupKey][v] || 0) + 1;
+          }
+        }
+      });
+    }
+  });
+
+  const sortedCats = Object.entries(catTotals).sort((a, b) => b[1].expense - a[1].expense);
+  const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
+  const goPrevMonth = () => { let y = month.y, m = month.m - 1; if (m < 1) { m = 12; y--; } setMonth({ y, m }); };
+  const goNextMonth = () => { let y = month.y, m = month.m + 1; if (m > 12) { m = 1; y++; } setMonth({ y, m }); };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+        <button onClick={goPrevMonth} style={navBtnStyle}>‹</button>
+        <div style={{ fontFamily: FONT_SERIF, fontSize: 20 }}>{month.y}년 {month.m}월 통계</div>
+        <button onClick={goNextMonth} style={navBtnStyle}>›</button>
+      </div>
+
+      {monthEntries.length === 0 ? (
+        <div style={{ color: C.inkFaint, fontSize: 14, padding: "30px 0", textAlign: "center" }}>이 달엔 기록이 없어요.</div>
+      ) : (
+        <>
+          <Section title="이번 달 가계부">
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              <Totals label="수입" value={income} color={C.income} />
+              <Totals label="지출" value={expense} color={C.expense} />
+            </div>
+            {sortedCats.length === 0 ? (
+              <div style={{ color: C.inkFaint, fontSize: 14 }}>가계부 기록 없음</div>
+            ) : (
+              sortedCats.map(([cat, v]) => (
+                <div key={cat} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
+                  <span>{cat}</span>
+                  <span>
+                    {v.expense > 0 && <span style={{ color: C.expense }}>-{fmtWon(v.expense)}원</span>}
+                    {v.income > 0 && <span style={{ color: C.income, marginLeft: 8 }}>+{fmtWon(v.income)}원</span>}
+                  </span>
+                </div>
+              ))
+            )}
+          </Section>
+
+          <Section title="이번 달 하루 유형">
+            {sortedTypes.map(([t, c]) => (
+              <div key={t} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
+                <span>{t}</span><span>{c}일</span>
+              </div>
+            ))}
+          </Section>
+
+          {Object.keys(detailCounts).length > 0 && (
+            <Section title="세부 항목 통계">
+              {Object.entries(detailCounts).map(([group, counts]) => (
+                <div key={group} style={{ marginBottom: 14 }}>
+                  <FieldLabel>{group}</FieldLabel>
+                  {Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([v, c]) => (
+                    <div key={v} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                      <span>{v}</span><span>{c}회</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </Section>
+          )}
+        </>
+      )}
     </div>
   );
 }
