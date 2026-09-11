@@ -211,12 +211,24 @@ function AuthScreen() {
   );
 }
 
+function initialDateFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("date");
+    if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) {
+      const [y, m, d] = q.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+  } catch (e) { /* 무시 */ }
+  return new Date();
+}
+
 // ================= 다이어리 앱 =================
 function DiaryApp({ user }) {
   const [today] = useState(() => new Date());
-  const [selected, setSelected] = useState(() => new Date());
-  const [strip, setStrip] = useState(() => centerStrip(new Date()));
-  const [entry, setEntry] = useState(() => emptyEntry(toKey(new Date())));
+  const [selected, setSelected] = useState(() => initialDateFromUrl());
+  const [strip, setStrip] = useState(() => centerStrip(initialDateFromUrl()));
+  const [entry, setEntry] = useState(() => emptyEntry(toKey(initialDateFromUrl())));
   const [datesWithData, setDatesWithData] = useState(() => new Set());
   const [detailSuggestions, setDetailSuggestions] = useState({}); // `${type}:${key}` -> string[]
   const [allEntries, setAllEntries] = useState([]); // 통계용 전체 엔트리 캐시
