@@ -391,10 +391,7 @@ function DiaryApp({ user }) {
               />
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, marginTop: 4 }}>
-            <button onClick={() => auth.signOut()} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer" }}>
-              로그아웃
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 14, marginTop: 4 }}>
             <button onClick={() => setShowStats((s) => !s)} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
               {showStats ? "일기로 돌아가기" : "📊 통계 보기"}
             </button>
@@ -548,6 +545,15 @@ function DiaryApp({ user }) {
             {showSummary && <SummaryCard entry={entry} dateLabel={dateLabel} totals={totals} />}
 
             <div style={{ textAlign: "center", fontSize: 12, color: C.inkFaint, height: 20, marginTop: 10 }}>{status}</div>
+
+            <div style={{ textAlign: "center", marginTop: 30 }}>
+              <button
+                onClick={() => { if (window.confirm("로그아웃할까요?")) auth.signOut(); }}
+                style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+              >
+                로그아웃
+              </button>
+            </div>
           </>
         )}
         </>
