@@ -231,7 +231,9 @@ function DiaryApp({ user }) {
   const [entry, setEntry] = useState(() => emptyEntry(toKey(initialDateFromUrl())));
   const [datesWithData, setDatesWithData] = useState(() => new Set());
   const [detailSuggestions, setDetailSuggestions] = useState({}); // `${type}:${key}` -> string[]
-  const [allEntries, setAllEntries] = useState([]); // 통계용 전체 엔트리 캐시
+  const [allEntries, setAllEntries] = useState([]); // 통계용 전체 엔트리 캐시 (삭제된 것 제외)
+  const [deletedEntries, setDeletedEntries] = useState([]); // 최근 삭제(30일 이내) 목록
+  const [showTrash, setShowTrash] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [statsPeriodType, setStatsPeriodType] = useState("month"); // "week" | "month" | "year"
   const [statsRefDate, setStatsRefDate] = useState(() => new Date());
@@ -252,8 +254,16 @@ function DiaryApp({ user }) {
         const dateSet = new Set();
         const sugMap = {}; // `${type}:${fieldKey}` -> Set of strings
         const entries = [];
+        const deleted = [];
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
         snap.forEach((doc) => {
           const d = doc.data();
+          if (d.deleted) {
+            const delMs = d.deletedAt && d.deletedAt.toMillis ? d.deletedAt.toMillis() : now;
+            if (now - delMs <= THIRTY_DAYS) deleted.push(d);
+            return; // 삭제된 건 통계/자동완성/날짜점에서 제외
+          }
           entries.push(d);
           dateSet.add(d.date);
           if (d.type && d.details) {
@@ -272,6 +282,7 @@ function DiaryApp({ user }) {
         setDatesWithData(dateSet);
         setDetailSuggestions(sugObj);
         setAllEntries(entries);
+        setDeletedEntries(deleted);
       } catch (e) { /* 무시 */ }
     })();
   }, []);
@@ -283,7 +294,7 @@ function DiaryApp({ user }) {
     (async () => {
       try {
         const doc = await db.collection("diary_entries").doc(docId(key)).get();
-        if (doc.exists) setEntry(doc.data());
+        if (doc.exists && !doc.data().deleted) setEntry(doc.data());
         else setEntry(emptyEntry(key));
       } catch (e) {
         setEntry(emptyEntry(key));
@@ -298,7 +309,7 @@ function DiaryApp({ user }) {
     setEntry(next);
     try {
       await db.collection("diary_entries").doc(docId(key)).set(
-        { ...next, uid: user.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { ...next, uid: user.uid, deleted: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
         { merge: true }
       );
       setDatesWithData((prev) => new Set(prev).add(key));
@@ -349,17 +360,55 @@ function DiaryApp({ user }) {
   }, [entry.transactions]);
 
   const resetEntry = async () => {
-    const ok = window.confirm(`${dateLabel} 기록을 전부 초기화할까요?\n되돌릴 수 없어요.`);
+    const ok = window.confirm(`${dateLabel} 기록을 초기화할까요?\n30일 안에는 "최근 삭제한 기록"에서 복구할 수 있어요.`);
     if (!ok) return;
     const key = toKey(selected);
+    const removed = entry;
     try {
-      await db.collection("diary_entries").doc(docId(key)).delete();
-    } catch (e) { /* 문서가 없었을 수도 있음 */ }
+      await db.collection("diary_entries").doc(docId(key)).set(
+        { uid: user.uid, deleted: true, deletedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } catch (e) { /* 무시 */ }
     setEntry(emptyEntry(key));
     setDatesWithData((prev) => { const next = new Set(prev); next.delete(key); return next; });
     setAllEntries((prev) => prev.filter((e) => e.date !== key));
-    setStatus("초기화됨");
-    setTimeout(() => setStatus(""), 1200);
+    setDeletedEntries((prev) => [...prev.filter((e) => e.date !== key), { ...removed, date: key, deleted: true }]);
+    setStatus("초기화됨 (30일간 복구 가능)");
+    setTimeout(() => setStatus(""), 2000);
+  };
+
+  const restoreEntry = async (dateKey) => {
+    try {
+      await db.collection("diary_entries").doc(docId(dateKey)).set(
+        { deleted: false, deletedAt: firebase.firestore.FieldValue.delete() },
+        { merge: true }
+      );
+      const doc = await db.collection("diary_entries").doc(docId(dateKey)).get();
+      const data = doc.data();
+      setDeletedEntries((prev) => prev.filter((e) => e.date !== dateKey));
+      setDatesWithData((prev) => new Set(prev).add(dateKey));
+      setAllEntries((prev) => [...prev.filter((e) => e.date !== dateKey), data]);
+      if (toKey(selected) === dateKey) setEntry(data);
+      setStatus("복구됐어요");
+      setTimeout(() => setStatus(""), 1500);
+    } catch (e) {
+      setStatus("복구 실패");
+      setTimeout(() => setStatus(""), 1500);
+    }
+  };
+
+  const exportAll = () => {
+    const data = [...allEntries].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `간편다이어리_백업_${toKey(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const goPrevWeek = () => { const nd = new Date(strip[0]); nd.setDate(nd.getDate() - 4); setStrip(centerStrip(nd)); };
@@ -392,11 +441,17 @@ function DiaryApp({ user }) {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 14, marginTop: 4 }}>
-            <button onClick={() => setShowStats((s) => !s)} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
+            <button onClick={() => { setShowStats((s) => !s); setShowTrash(false); }} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
               {showStats ? "일기로 돌아가기" : "📊 통계 보기"}
             </button>
             <button onClick={resetEntry} style={{ background: "none", border: "none", color: C.expense, fontSize: 12, cursor: "pointer" }}>
               이 날짜 초기화
+            </button>
+            <button onClick={() => { setShowTrash((s) => !s); setShowStats(false); }} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
+              {showTrash ? "일기로 돌아가기" : `🗑 최근 삭제한 기록${deletedEntries.length ? ` (${deletedEntries.length})` : ""}`}
+            </button>
+            <button onClick={exportAll} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
+              ⬇ 전체 내보내기
             </button>
           </div>
         </div>
@@ -416,6 +471,8 @@ function DiaryApp({ user }) {
               setShowStats(false);
             }}
           />
+        ) : showTrash ? (
+          <TrashView entries={deletedEntries} onRestore={restoreEntry} />
         ) : (
         <>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
@@ -743,6 +800,32 @@ function StatsView({ entries, periodType, setPeriodType, refDate, setRefDate, on
             </Section>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function TrashView({ entries, onRestore }) {
+  const sorted = [...entries].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return (
+    <div>
+      <div style={{ fontFamily: FONT_SERIF, fontSize: 18, marginBottom: 6 }}>최근 삭제한 기록</div>
+      <div style={{ fontSize: 12.5, color: C.inkFaint, marginBottom: 16 }}>삭제 후 30일이 지나면 목록에서 사라져요.</div>
+      {sorted.length === 0 ? (
+        <div style={{ color: C.inkFaint, fontSize: 14, padding: "30px 0", textAlign: "center" }}>삭제한 기록이 없어요.</div>
+      ) : (
+        sorted.map((e) => {
+          const bits = [e.type, e.mood, e.weather].filter(Boolean).join(" · ");
+          return (
+            <div key={e.date} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{e.date}</div>
+                {bits && <div style={{ fontSize: 12.5, color: C.inkSoft }}>{bits}</div>}
+              </div>
+              <button onClick={() => onRestore(e.date)} style={{ ...smallPill, borderColor: C.accent, color: C.accent }}>복구</button>
+            </div>
+          );
+        })
       )}
     </div>
   );
