@@ -131,7 +131,7 @@ const fmtWon = (n) => n.toLocaleString("ko-KR");
 function emptyEntry(dateKey) {
   return {
     date: dateKey, type: null, mood: null, weather: null, weatherNote: "",
-    transactions: [], summary: "", tomorrow: "", details: {},
+    transactions: [], summary: "", tomorrow: "", details: {}, reminder: "",
   };
 }
 function centerStrip(d) {
@@ -353,6 +353,13 @@ function DiaryApp({ user }) {
   };
   const removeTransaction = (id) => save({ ...entry, transactions: entry.transactions.filter((t) => t.id !== id) });
 
+  const datesWithReminder = useMemo(() => {
+    const set = new Set();
+    allEntries.forEach((e) => { if (e.reminder && e.reminder.trim()) set.add(e.date); });
+    if (entry.reminder && entry.reminder.trim()) set.add(entry.date);
+    return set;
+  }, [allEntries, entry.reminder, entry.date]);
+
   const totals = useMemo(() => {
     let income = 0, expense = 0;
     for (const t of entry.transactions) { if (t.kind === "수입") income += t.amount; else expense += t.amount; }
@@ -483,6 +490,7 @@ function DiaryApp({ user }) {
               const isSel = key === toKey(selected);
               const isToday = key === toKey(today);
               const hasData = datesWithData.has(key);
+              const hasReminder = datesWithReminder.has(key);
               return (
                 <button key={key} onClick={() => setSelected(new Date(d))}
                   style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "6px 0", width: 34 }}>
@@ -494,6 +502,7 @@ function DiaryApp({ user }) {
                     color: isSel ? "#fff" : isToday ? C.accent : C.ink,
                     border: isToday && !isSel ? `1px solid ${C.accent}` : "none",
                   }}>{d.getDate()}</span>
+                  <span style={{ fontSize: 8, height: 8, lineHeight: "8px" }}>{hasReminder ? "🔔" : ""}</span>
                   <span style={{ width: 4, height: 4, borderRadius: "50%", background: hasData ? C.accent : "transparent" }} />
                 </button>
               );
@@ -506,6 +515,29 @@ function DiaryApp({ user }) {
           <div style={{ color: C.inkFaint, fontSize: 14, padding: "40px 0", textAlign: "center" }}>불러오는 중…</div>
         ) : (
           <>
+            {entry.reminder && entry.reminder.trim() && (
+              <div style={{
+                background: C.accent, color: "#fff", borderRadius: 10, padding: "14px 16px", marginBottom: 14,
+                display: "flex", alignItems: "center", gap: 10, fontSize: 14,
+              }}>
+                <span style={{ fontSize: 18 }}>🔔</span>
+                <span>
+                  <strong>{toKey(selected) === toKey(today) ? "오늘의 알림" : "이 날의 알림"}</strong>
+                  <div style={{ marginTop: 2 }}>{entry.reminder}</div>
+                </span>
+              </div>
+            )}
+
+            <Section title="알림">
+              <FieldLabel>이 날짜에 남길 알림 (선택)</FieldLabel>
+              <input
+                placeholder="예: 병원 예약 9시, OO 생일"
+                value={entry.reminder || ""}
+                onChange={(e) => setField("reminder", e.target.value)}
+                style={underlineInput}
+              />
+            </Section>
+
             <Section title="오늘의 개요">
               <FieldLabel>어떤 하루였나요</FieldLabel>
               <PillRow options={TYPES} value={entry.type} onChange={(v) => setField("type", v === entry.type ? null : v)} />
