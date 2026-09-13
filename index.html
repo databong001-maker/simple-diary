@@ -454,12 +454,6 @@ function DiaryApp({ user }) {
             <button onClick={resetEntry} style={{ background: "none", border: "none", color: C.expense, fontSize: 12, cursor: "pointer" }}>
               이 날짜 초기화
             </button>
-            <button onClick={() => { setShowTrash((s) => !s); setShowStats(false); }} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
-              {showTrash ? "일기로 돌아가기" : `🗑 최근 삭제한 기록${deletedEntries.length ? ` (${deletedEntries.length})` : ""}`}
-            </button>
-            <button onClick={exportAll} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, cursor: "pointer" }}>
-              ⬇ 전체 내보내기
-            </button>
           </div>
         </div>
 
@@ -635,7 +629,15 @@ function DiaryApp({ user }) {
 
             <div style={{ textAlign: "center", fontSize: 12, color: C.inkFaint, height: 20, marginTop: 10 }}>{status}</div>
 
-            <div style={{ textAlign: "center", marginTop: 30 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 30 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+                <button onClick={() => { setShowTrash((s) => !s); setShowStats(false); }} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer" }}>
+                  {showTrash ? "일기로 돌아가기" : `🗑 최근 삭제한 기록${deletedEntries.length ? ` (${deletedEntries.length})` : ""}`}
+                </button>
+                <button onClick={exportAll} style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer" }}>
+                  ⬇ 전체 내보내기
+                </button>
+              </div>
               <button
                 onClick={() => { if (window.confirm("로그아웃할까요?")) auth.signOut(); }}
                 style={{ background: "none", border: "none", color: C.inkFaint, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
