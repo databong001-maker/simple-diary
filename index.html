@@ -24,6 +24,7 @@
   }
   input:focus { outline: none; }
   button { font-family: inherit; }
+  .date-scroll::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body>
@@ -136,7 +137,7 @@ function emptyEntry(dateKey) {
 }
 function centerStrip(d) {
   const arr = [];
-  for (let i = -3; i <= 3; i++) {
+  for (let i = -14; i <= 14; i++) {
     const nd = new Date(d);
     nd.setDate(d.getDate() + i);
     arr.push(nd);
@@ -241,6 +242,7 @@ function DiaryApp({ user }) {
   const [status, setStatus] = useState("");
   const [txDraft, setTxDraft] = useState({ kind: "지출", category: null, amount: "", memo: "" });
   const amountRef = useRef(null);
+  const stripRef = useRef(null);
   const memoRef = useRef(null);
   const [loading, setLoading] = useState(true);
 
@@ -286,6 +288,12 @@ function DiaryApp({ user }) {
       } catch (e) { /* 무시 */ }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!stripRef.current) return;
+    const el = stripRef.current.querySelector(`[data-daykey="${toKey(selected)}"]`);
+    if (el) el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [selected, strip]);
 
   useEffect(() => {
     const key = toKey(selected);
@@ -418,8 +426,8 @@ function DiaryApp({ user }) {
     URL.revokeObjectURL(url);
   };
 
-  const goPrevWeek = () => { const nd = new Date(strip[0]); nd.setDate(nd.getDate() - 4); setStrip(centerStrip(nd)); };
-  const goNextWeek = () => { const nd = new Date(strip[strip.length - 1]); nd.setDate(nd.getDate() + 4); setStrip(centerStrip(nd)); };
+  const goPrevWeek = () => { const nd = new Date(selected); nd.setDate(nd.getDate() - 7); setSelected(nd); setStrip(centerStrip(nd)); };
+  const goNextWeek = () => { const nd = new Date(selected); nd.setDate(nd.getDate() + 7); setSelected(nd); setStrip(centerStrip(nd)); };
 
   const dateLabel = `${selected.getMonth() + 1}월 ${selected.getDate()}일 (${WEEKDAY[selected.getDay()]})`;
 
@@ -478,7 +486,14 @@ function DiaryApp({ user }) {
         <>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
           <button onClick={goPrevWeek} style={navBtnStyle}>‹</button>
-          <div style={{ display: "flex", flex: 1, justifyContent: "space-between" }}>
+          <div
+            ref={stripRef}
+            className="date-scroll"
+            style={{
+              display: "flex", flex: 1, overflowX: "auto", scrollSnapType: "x proximity",
+              msOverflowStyle: "none", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
+            }}
+          >
             {strip.map((d) => {
               const key = toKey(d);
               const isSel = key === toKey(selected);
@@ -486,15 +501,16 @@ function DiaryApp({ user }) {
               const hasData = datesWithData.has(key);
               const hasReminder = datesWithReminder.has(key);
               return (
-                <button key={key} onClick={() => setSelected(new Date(d))}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "6px 0", width: 34 }}>
+                <button key={key} data-daykey={key} onClick={() => setSelected(new Date(d))}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "6px 0", width: 42, flexShrink: 0, scrollSnapAlign: "center" }}>
                   <span style={{ fontSize: 11, color: isSel ? C.accent : C.inkFaint }}>{WEEKDAY[d.getDay()]}</span>
                   <span style={{
-                    width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 14, fontWeight: isSel ? 700 : 400,
                     background: isSel ? C.accent : "transparent",
                     color: isSel ? "#fff" : isToday ? C.accent : C.ink,
                     border: isToday && !isSel ? `1px solid ${C.accent}` : "none",
+                    boxShadow: isSel ? `0 2px 6px rgba(122,59,68,0.35)` : "none",
                   }}>{d.getDate()}</span>
                   <span style={{ fontSize: 8, height: 8, lineHeight: "8px" }}>{hasReminder ? "🔔" : ""}</span>
                   <span style={{ width: 4, height: 4, borderRadius: "50%", background: hasData ? C.accent : "transparent" }} />
@@ -867,8 +883,11 @@ function TrashView({ entries, onRestore }) {
 
 function Section({ title, children }) {
   return (
-    <div style={{ background: C.card, borderRadius: 10, border: `1px solid ${C.line}`, padding: 18, marginBottom: 14 }}>
-      <div style={{ fontFamily: FONT_SERIF, fontSize: 17, marginBottom: 14 }}>{title}</div>
+    <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.line}`, padding: 18, marginBottom: 14, boxShadow: "0 2px 10px rgba(35,38,47,0.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <span style={{ width: 4, height: 18, borderRadius: 2, background: C.accent, display: "inline-block" }} />
+        <div style={{ fontFamily: FONT_SERIF, fontSize: 18 }}>{title}</div>
+      </div>
       {children}
     </div>
   );
@@ -881,7 +900,14 @@ function PillRow({ options, value, onChange }) {
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {options.map((o) => (
         <button key={o} onClick={() => onChange(o)}
-          style={{ ...smallPill, background: value === o ? C.ink : "transparent", color: value === o ? "#fff" : C.inkSoft, borderColor: value === o ? C.ink : C.line }}>
+          style={{
+            ...smallPill,
+            background: value === o ? C.accent : "transparent",
+            color: value === o ? "#fff" : C.inkSoft,
+            borderColor: value === o ? C.accent : C.line,
+            fontWeight: value === o ? 700 : 400,
+            boxShadow: value === o ? "0 2px 6px rgba(122,59,68,0.25)" : "none",
+          }}>
           {o}
         </button>
       ))}
