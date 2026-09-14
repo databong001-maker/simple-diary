@@ -53,6 +53,9 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  db.enablePersistence({ synchronizeTabs: true }).catch(function (err) {
+    console.warn("오프라인 캐시 비활성화됨:", err.code);
+  });
   window.__auth = auth;
   window.__db = db;
 </script>
@@ -245,6 +248,18 @@ function DiaryApp({ user }) {
   const stripRef = useRef(null);
   const memoRef = useRef(null);
   const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   const docId = (dateKey) => `${user.uid}_${dateKey}`;
 
@@ -315,18 +330,24 @@ function DiaryApp({ user }) {
   const save = useCallback(async (next) => {
     const key = next.date;
     setEntry(next);
+    setDatesWithData((prev) => new Set(prev).add(key));
+    setAllEntries((prev) => {
+      const others = prev.filter((e) => e.date !== key);
+      return [...others, { ...next, uid: user.uid }];
+    });
+    if (!navigator.onLine) {
+      setStatus("오프라인 저장됨 · 연결되면 자동 동기화");
+      setTimeout(() => setStatus(""), 2000);
+    }
     try {
       await db.collection("diary_entries").doc(docId(key)).set(
         { ...next, uid: user.uid, deleted: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
         { merge: true }
       );
-      setDatesWithData((prev) => new Set(prev).add(key));
-      setAllEntries((prev) => {
-        const others = prev.filter((e) => e.date !== key);
-        return [...others, { ...next, uid: user.uid }];
-      });
-      setStatus("저장됨");
-      setTimeout(() => setStatus(""), 1200);
+      if (navigator.onLine) {
+        setStatus("저장됨");
+        setTimeout(() => setStatus(""), 1200);
+      }
     } catch (e) {
       setStatus("저장 실패");
       setTimeout(() => setStatus(""), 1500);
@@ -434,6 +455,14 @@ function DiaryApp({ user }) {
   return (
     <div style={{ background: C.paper, minHeight: "100vh", display: "flex", justifyContent: "center", padding: "20px 0 60px" }}>
       <div style={{ width: "100%", maxWidth: 420, padding: "0 16px" }}>
+        {!isOnline && (
+          <div style={{
+            background: C.inkFaint, color: "#fff", borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+            fontSize: 12.5, display: "flex", alignItems: "center", gap: 6,
+          }}>
+            📡 오프라인 상태예요 · 인터넷이 연결되면 자동으로 동기화돼요
+          </div>
+        )}
         <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: 13, color: C.inkFaint }}>간편다이어리</div>
