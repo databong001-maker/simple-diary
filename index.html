@@ -4,6 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>간편다이어리</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#7A3B44" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="간편다이어리" />
 
 <!-- Firebase (compat SDK) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -1036,6 +1043,13 @@ root.render(<Root />);
     var code = Babel.transform(src, { presets: [["react", { runtime: "classic" }]] }).code;
     (0, eval)(code);
   })();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* 무시 */ });
+    });
+  }
 </script>
 </body>
 </html>
