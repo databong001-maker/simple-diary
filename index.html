@@ -142,7 +142,7 @@ const fmtWon = (n) => n.toLocaleString("ko-KR");
 function emptyEntry(dateKey) {
   return {
     date: dateKey, type: null, mood: null, weather: null, weatherNote: "",
-    transactions: [], summary: "", tomorrow: "", details: {}, reminder: "",
+    transactions: [], summary: "", tomorrow: "", details: {}, reminder: "", memo: "",
   };
 }
 function centerStrip(d) {
@@ -653,6 +653,11 @@ function DiaryApp({ user }) {
               </Section>
             )}
 
+            <Section title="메모">
+              <FieldLabel>자유롭게 남기는 메모 (선택)</FieldLabel>
+              <VoiceMemoInput value={entry.memo} onChange={(v) => setField("memo", v)} />
+            </Section>
+
             <Section title="수입 · 지출">
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 <Totals label="수입" value={totals.income} color={C.income} />
@@ -1060,6 +1065,51 @@ function Section({ title, children }) {
     </div>
   );
 }
+function VoiceMemoInput({ value, onChange }) {
+  const [recording, setRecording] = useState(false);
+
+  const startVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { window.alert("이 브라우저는 음성 인식을 지원하지 않아요"); return; }
+    const rec = new SR();
+    rec.lang = "ko-KR";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    setRecording(true);
+    rec.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      onChange(value ? value + " " + text : text);
+    };
+    rec.onerror = () => { window.alert("음성 인식에 실패했어요, 다시 시도해주세요"); };
+    rec.onend = () => setRecording(false);
+    try { rec.start(); } catch (e) { setRecording(false); }
+  };
+
+  return (
+    <div>
+      <textarea
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="오늘 있었던 일을 자유롭게 적어보세요"
+        rows={5}
+        style={{
+          width: "100%", border: `1px solid ${C.line}`, borderRadius: 8, padding: 10,
+          fontSize: 14, fontFamily: FONT_SANS, color: C.ink, resize: "vertical", minHeight: 100, boxSizing: "border-box",
+        }}
+      />
+      <button type="button" onClick={startVoice}
+        style={{
+          ...smallPill, marginTop: 8,
+          background: recording ? C.accent : "transparent",
+          color: recording ? "#fff" : C.inkSoft,
+          borderColor: recording ? C.accent : C.line,
+        }}>
+        {recording ? "🔴 듣는 중…" : "🎤 음성으로 입력"}
+      </button>
+    </div>
+  );
+}
+
 function FieldLabel({ children, style }) {
   return <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 8, ...style }}>{children}</div>;
 }
